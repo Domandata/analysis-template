@@ -1,0 +1,29 @@
+name: Sync survey responses
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Fetch latest export
+        run: |
+          mkdir -p data
+          curl -sf -H "Authorization: Bearer ${{ secrets.DOMANDATA_API_KEY }}" \
+            "https://www.domandata.net/api/v1/export?survey_id=${{ vars.SURVEY_ID }}&format=csv&pii_mode=${{ vars.PII_MODE }}" \
+            -o data/responses.csv
+
+      - name: Commit if changed
+        run: |
+          git config user.name "domandata-sync-bot"
+          git config user.email "actions@github.com"
+          git diff --quiet -- data/responses.csv || (git add data/responses.csv && git commit -m "chore: sync responses" && git push)
