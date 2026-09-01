@@ -18,12 +18,37 @@ jobs:
       - name: Fetch latest export
         run: |
           mkdir -p data
+
+          # Domandata's export API treats a missing/empty pii_mode as "include" —
+          # the right default for its general-purpose manual callers, but the
+          # wrong one here. Default closed for this workflow specifically so an
+          # unset/cleared PII_MODE variable (e.g. repo config edited by hand, or
+          # an interrupted repo setup) never silently starts syncing identifying
+          # answers into this repo.
+          PII_MODE="${{ vars.PII_MODE }}"
+          PII_MODE="${PII_MODE:-exclude}"
+
+          # EXPORT_FORMAT / EXPORT_LABELS / EXPORT_FLAT are set from the survey
+          # owner's Advanced GitHub Sync export-options settings in Domandata;
+          # default to today's API defaults if unset so an older/partially-
+          # configured repo keeps working. Unlike PII_MODE these aren't privacy-
+          # sensitive (they only affect data shape, not whether PII appears), so
+          # defaulting open here is fine.
+          EXPORT_FORMAT="${{ vars.EXPORT_FORMAT }}"
+          EXPORT_FORMAT="${EXPORT_FORMAT:-csv}"
+          EXPORT_LABELS="${{ vars.EXPORT_LABELS }}"
+          EXPORT_LABELS="${EXPORT_LABELS:-true}"
+          EXPORT_FLAT="${{ vars.EXPORT_FLAT }}"
+          EXPORT_FLAT="${EXPORT_FLAT:-false}"
+          OUT_FILE="data/responses.${EXPORT_FORMAT}"
+          echo "OUT_FILE=${OUT_FILE}" >> "$GITHUB_ENV"
+
           curl -sf -H "Authorization: Bearer ${{ secrets.DOMANDATA_API_KEY }}" \
-            "https://www.domandata.net/api/v1/export?survey_id=${{ vars.SURVEY_ID }}&format=csv&pii_mode=${{ vars.PII_MODE }}" \
-            -o data/responses.csv
+            "https://www.domandata.net/api/v1/export?survey_id=${{ vars.SURVEY_ID }}&format=${EXPORT_FORMAT}&labels=${EXPORT_LABELS}&flat=${EXPORT_FLAT}&pii_mode=${PII_MODE}" \
+            -o "$OUT_FILE"
 
       - name: Commit if changed
         run: |
           git config user.name "domandata-sync-bot"
           git config user.email "actions@github.com"
-          git diff --quiet -- data/responses.csv || (git add data/responses.csv && git commit -m "chore: sync responses" && git push)
+          git diff --quiet -- "$OUT_FILE" || (git add "$OUT_FILE" && git commit -m "chore: sync responses" && git push)
